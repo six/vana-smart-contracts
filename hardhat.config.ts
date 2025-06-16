@@ -101,7 +101,7 @@ const config: HardhatUserConfig = {
   },
   gasReporter: {
     enabled: true,
-    excludeContracts: ["mocks", "tests"],
+    excludeContracts: ["mocks", "tests","test-scripts"],
   },
 };
 export default config;

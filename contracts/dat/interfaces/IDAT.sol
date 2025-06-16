@@ -6,8 +6,15 @@ interface IDAT {
         string memory name,
         string memory symbol,
         address owner,
+        address treasury,
+        address ammRegistry,
         uint256 cap,
         address[] memory receivers,
         uint256[] memory amounts
     ) external;
+
+    /* ─── factory-only setters ─── */
+    function setAmmRegistry(address reg) external;
+    function setTreasury(address t) external;
+    function setFeeExempt(address a, bool e) external;
 }

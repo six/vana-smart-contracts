@@ -23,6 +23,8 @@ describe("DAT", function () {
     let user1: HardhatEthersSigner;
     let user2: HardhatEthersSigner;
     let user3: HardhatEthersSigner;
+    let treasury: HardhatEthersSigner;
+    let mockAMMRegistry: any;
 
     let datToken: DAT;
     let cloneHelper: CloneHelper;
@@ -60,7 +62,13 @@ describe("DAT", function () {
             user1,
             user2,
             user3,
+            treasury,
         ] = await ethers.getSigners();
+
+        // Deploy MockAMMRegistry
+        const MockAMMRegistryFactory = await ethers.getContractFactory("MockAMMRegistry");
+        mockAMMRegistry = await MockAMMRegistryFactory.deploy();
+        await mockAMMRegistry.waitForDeployment();
 
         // Deploy DAT
         const datFactory = await ethers.getContractFactory(datContractName);
@@ -78,8 +86,8 @@ describe("DAT", function () {
         datToken = (await ethers.getContractAt("DAT", datTokenAddress)) as DAT;
 
         await datToken.initialize(
-            tokenName, tokenSymbol, owner.address, tokenCap,
-            [beneficiary1, beneficiary2], [amount1, amount2],
+            tokenName, tokenSymbol, owner.address, treasury.address, mockAMMRegistry.target, tokenCap,
+            [beneficiary1.address, beneficiary2.address], [amount1, amount2],
         );
     }
 
@@ -119,8 +127,8 @@ describe("DAT", function () {
                     const datToken = (await ethers.getContractAt("DAT", datTokenAddress)) as DAT;
 
                     await datToken.initialize(
-                        tokenName, tokenSymbol, owner.address, 0,
-                        [beneficiary1, beneficiary2], [amount1, amount2],
+                        tokenName, tokenSymbol, owner.address, treasury.address, mockAMMRegistry.target, 0,
+                        [beneficiary1.address, beneficiary2.address], [amount1, amount2],
                     );
 
                     (await datToken.cap()).should.eq(ethers.MaxUint256);
@@ -150,57 +158,57 @@ describe("DAT", function () {
 
                     await datToken
                         .initialize(
-                            "", tokenSymbol, owner.address, 0,
-                            [beneficiary1, beneficiary2], [amount1, amount2],
+                            "", tokenSymbol, owner.address, treasury.address, mockAMMRegistry.target, 0,
+                            [beneficiary1.address, beneficiary2.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`EmptyString("name")`);
 
                     await datToken
                         .initialize(
-                            tokenName, "", owner.address, 0,
-                            [beneficiary1, beneficiary2], [amount1, amount2],
+                            tokenName, "", owner.address, treasury.address, mockAMMRegistry.target, 0,
+                            [beneficiary1.address, beneficiary2.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`EmptyString("symbol")`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, ethers.ZeroAddress, 0,
-                            [beneficiary1, beneficiary2], [amount1, amount2],
+                            tokenName, tokenSymbol, ethers.ZeroAddress, treasury.address, mockAMMRegistry.target, 0,
+                            [ethers.ZeroAddress, beneficiary2.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`ZeroAddress()`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, 0,
-                            [beneficiary1], [amount1, amount2],
+                            tokenName, tokenSymbol, owner.address, treasury.address, mockAMMRegistry.target, 0,
+                            [beneficiary1.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`ArrayLengthMismatch(1, 2)`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, 0,
-                            [beneficiary1, beneficiary2], [0, amount2],
+                            tokenName, tokenSymbol, owner.address, treasury.address, mockAMMRegistry.target, 0,
+                            [beneficiary1.address, beneficiary2.address], [0, amount2],
                         )
                         .should.be.rejectedWith(`ZeroAmount()`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, 0,
-                            [beneficiary1, beneficiary2], [amount1, 0],
+                            tokenName, tokenSymbol, owner.address, treasury.address, mockAMMRegistry.target, 0,
+                            [beneficiary1.address, beneficiary2.address], [amount1, 0],
                         )
                         .should.be.rejectedWith(`ZeroAmount()`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, 0,
-                            [ethers.ZeroAddress, beneficiary2], [amount1, amount2],
+                            tokenName, tokenSymbol, owner.address, treasury.address, mockAMMRegistry.target, 0,
+                            [ethers.ZeroAddress, beneficiary2.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`ERC20InvalidReceiver("${ethers.ZeroAddress}")`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, 0,
-                            [beneficiary1, ethers.ZeroAddress], [amount1, amount2],
+                            tokenName, tokenSymbol, owner.address, treasury.address, mockAMMRegistry.target, 0,
+                            [beneficiary1.address, ethers.ZeroAddress], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`ERC20InvalidReceiver("${ethers.ZeroAddress}")`);
                 });
@@ -870,6 +878,8 @@ describe("DATFactory + VestingWallet", () => {
     let user1: HardhatEthersSigner;
     let user2: HardhatEthersSigner;
     let user3: HardhatEthersSigner;
+    let treasury: HardhatEthersSigner;
+    let mockAMMRegistry: any;
 
     let datFactory: DATFactoryImplementation;
     let datToken: DAT;
@@ -913,7 +923,13 @@ describe("DATFactory + VestingWallet", () => {
             user1,
             user2,
             user3,
+            treasury,
         ] = await ethers.getSigners();
+
+        // Deploy MockAMMRegistry
+        const MockAMMRegistryFactory = await ethers.getContractFactory("MockAMMRegistry");
+        mockAMMRegistry = await MockAMMRegistryFactory.deploy();
+        await mockAMMRegistry.waitForDeployment();
 
         // Deploy DATFactory
         const datTokenFactory = await ethers.getContractFactory("DAT");
@@ -930,7 +946,7 @@ describe("DATFactory + VestingWallet", () => {
 
         const factoryDeploy = await upgrades.deployProxy(
             await ethers.getContractFactory("DATFactoryImplementation"),
-            [owner.address, minCap, maxCap, datImplementation.target, datVotesImplementation.target, datPausableImplementation.target],
+            [owner.address, minCap, maxCap, datImplementation.target, datVotesImplementation.target, datPausableImplementation.target, mockAMMRegistry.target, treasury.address],
             {
                 kind: "uups",
             },
@@ -1731,6 +1747,74 @@ describe("DATFactory + VestingWallet", () => {
                 await datFactory
                     .predictAddress(0, ethers.ZeroHash)
                     .should.be.rejectedWith("ZeroSalt");
+            });
+        });
+
+        describe("Factory Batch Updaters", () => {
+            it("should update treasury and registry for multiple tokens", async function () {
+                // Deploy two tokens
+                const salt1 = ethers.id("BATCH1");
+                const salt2 = ethers.id("BATCH2");
+
+                const tx1 = await datFactory.connect(owner).createToken({
+                    datType: 0,
+                    name: tokenName + " 1",
+                    symbol: tokenSymbol + "1",
+                    cap: tokenCap,
+                    schedules: [],
+                    salt: salt1,
+                    owner: admin.address,
+                });
+                const receipt1 = await getReceipt(tx1);
+                const tokenAddress1 = (receipt1.logs.find(
+                    (log) => (log as EventLog).fragment?.name === "DATCreated"
+                ) as EventLog).args[0];
+
+                const tx2 = await datFactory.connect(owner).createToken({
+                    datType: 0,
+                    name: tokenName + " 2",
+                    symbol: tokenSymbol + "2",
+                    cap: tokenCap,
+                    schedules: [],
+                    salt: salt2,
+                    owner: admin.address,
+                });
+                const receipt2 = await getReceipt(tx2);
+                const tokenAddress2 = (receipt2.logs.find(
+                    (log) => (log as EventLog).fragment?.name === "DATCreated"
+                ) as EventLog).args[0];
+
+                const dat1 = await ethers.getContractAt("DAT", tokenAddress1);
+                const dat2 = await ethers.getContractAt("DAT", tokenAddress2);
+
+                // Deploy new treasury and registry
+                const newTreasury = user1.address;
+                const NewAMMRegistryFactory = await ethers.getContractFactory("MockAMMRegistry");
+                const newAMMRegistry = await NewAMMRegistryFactory.deploy();
+                await newAMMRegistry.waitForDeployment();
+
+                // Only maintainer can call batch updaters
+                await expect(
+                    datFactory.connect(user2).updateTreasuryForTokens([tokenAddress1, tokenAddress2], newTreasury)
+                ).to.be.revertedWithCustomError(datFactory, "AccessControlUnauthorizedAccount");
+
+                await expect(
+                    datFactory.connect(maintainer).updateTreasuryForTokens([tokenAddress1, tokenAddress2], newTreasury)
+                ).to.not.be.reverted;
+
+                (await dat1.treasury()).should.eq(newTreasury);
+                (await dat2.treasury()).should.eq(newTreasury);
+
+                await expect(
+                    datFactory.connect(user2).updateRegistryForTokens([tokenAddress1, tokenAddress2], newAMMRegistry.target)
+                ).to.be.revertedWithCustomError(datFactory, "AccessControlUnauthorizedAccount");
+
+                await expect(
+                    datFactory.connect(maintainer).updateRegistryForTokens([tokenAddress1, tokenAddress2], newAMMRegistry.target)
+                ).to.not.be.reverted;
+
+                (await dat1.ammRegistry()).should.eq(newAMMRegistry.target);
+                (await dat2.ammRegistry()).should.eq(newAMMRegistry.target);
             });
         });
     });

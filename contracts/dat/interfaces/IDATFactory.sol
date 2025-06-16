@@ -24,6 +24,10 @@ interface IDATFactory {
 
     function predictAddress(DATType datType, bytes32 salt) external view returns (address);
 
+    function updateTreasuryForTokens(address[] calldata tokens, address newTreasury) external;
+
+    function updateRegistryForTokens(address[] calldata tokens, address newRegistry) external;
+
     struct VestingParams {
         address beneficiary; // receiver
         uint64 start; // unix, token generation event

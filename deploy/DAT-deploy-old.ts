@@ -8,14 +8,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
     const ownerAddress = process.env.OWNER_ADDRESS || deployer.address;
 
-    // Deploy AMMRegistry first
-    const AMMRegistryDeploy = await deployments.deploy("AMMRegistry", {
-        from: deployer.address,
-        args: [deployer.address],
-        log: true,
-    });
-
-    // Deploy DAT contracts
     const DATDeploy = await deployments.deploy("DAT", {
         from: deployer.address,
         args: [],
@@ -40,18 +32,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const proxyContractName = "DATFactoryProxy";
     const proxyContractPath =
         "contracts/dat/DATFactoryProxy.sol:DATFactoryProxy";
-    const maxCap = (1n << 208n) - 1n;
-    // Use deployer.address as treasury for now
-    const initializeParams = [
-        ownerAddress,
-        1,
-        maxCap,
-        DATDeploy.address,
-        DATVotesDeploy.address,
-        DATPausableDeploy.address,
-        AMMRegistryDeploy.address,
-        deployer.address,
-    ];
+
+    const initializeParams = [ownerAddress, 0, ethers.MaxUint256, DATDeploy.address, DATVotesDeploy.address, DATPausableDeploy.address];
 
     const proxyDeploy = await deployProxy(
         deployer,
@@ -84,4 +66,4 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 export default func;
-func.tags = ["DATFactoryDeploy"];
+func.tags = ["DATFactoryDeployOld"];

@@ -7,6 +7,8 @@ abstract contract DATFactoryStorageV1 is IDATFactory {
     mapping(DATType datType => address templateAddress) public override datTemplates;
     
     EnumerableSet.AddressSet internal _datList;
+    address public ammRegistry;
+    address public treasury; 
 
     uint256 public override minCapDefault;
     uint256 public override maxCapDefault;

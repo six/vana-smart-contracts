@@ -9,6 +9,8 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20Burnable
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
+import { IAMMRegistry } from "./interfaces/IAMMRegistry.sol";
+
 /* ─── custom errors ─── */
 error AccountBlocked();
 error ZeroAddress();
@@ -28,15 +30,25 @@ contract DAT is
 {
     using EnumerableSet for EnumerableSet.AddressSet;
 
-    /* ───── internal state ───── */
-    EnumerableSet.AddressSet internal _blockList;
+    /* ───── constants ───── */
+    uint16 public constant FEE_BPS = 100;                      // 1 %
 
     /* ───── roles ───── */
-    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant MINTER_ROLE   = keccak256("MINTER_ROLE");
+    bytes32 public constant FACTORY_ROLE  = keccak256("FACTORY_ROLE"); // factory-only powers
+
+    /* ───── internal state ───── */
+    EnumerableSet.AddressSet internal _blockList;
+    IAMMRegistry public ammRegistry;                            // AMM allow-list
+    address      public treasury;                               // fee sink
+    mapping(address => bool) public isFeeExempt;                // wallet ↦ exempt?
 
     /* ───── events ───── */
     event AddressBlocked(address indexed);
     event AddressUnblocked(address indexed);
+    event AmmRegistryUpdated(address indexed);                  // factory-only
+    event TreasuryUpdated(address indexed);                     // factory-only
+    event FeeExemptionUpdated(address indexed, bool);           // factory-only
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -44,8 +56,10 @@ contract DAT is
     }
 
     /**
-     * @notice Initialise the clone **and mint** to the supplied receivers.
+     * @notice Initialise the clone **and mint** to the supplied receivers
+     *         (factory passes `treasury_` here).
      *
+     * @param treasury_  Initial treasury wallet that receives the 1 % fees
      * @param cap_       Cap amount, if 0, use max uint256
      * @param receivers  Vesting-wallet addresses
      * @param amounts    Matching mint amounts
@@ -54,38 +68,52 @@ contract DAT is
         string memory name_,
         string memory symbol_,
         address owner_,
+        address treasury_,
+        address ammRegistry_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
     ) external virtual initializer {
-        __DAT_init(name_, symbol_, owner_, cap_, receivers, amounts);
+        __DAT_init(name_, symbol_, owner_, treasury_, ammRegistry_, cap_, receivers, amounts);
     }
 
     function __DAT_init(
         string memory name_,
         string memory symbol_,
         address owner_,
+        address treasury_,
+        address ammRegistry_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
     ) internal onlyInitializing {
-        // Validate input parameters
+        /* ── validation ── */
         if (bytes(name_).length == 0) revert EmptyString("name");
         if (bytes(symbol_).length == 0) revert EmptyString("symbol");
         if (owner_ == address(0)) revert ZeroAddress();
+        if (treasury_ == address(0))   revert ZeroAddress();
+        if (ammRegistry_ == address(0)) revert ZeroAddress();
         if (receivers.length != amounts.length) revert ArrayLengthMismatch(receivers.length, amounts.length);
 
-        // Initialise the base contract
+        /* ── base inits ── */
         __ERC20_init(name_, symbol_);
         __ERC20Capped_init(cap_ == 0 ? type(uint256).max : cap_);
         __ERC20Burnable_init();
         __AccessControl_init();
 
-        /* owner gets every role */
+        /* ── roles ── */
+        address factory = _msgSender();               // clone factory
+        _grantRole(FACTORY_ROLE,       factory);
         _grantRole(DEFAULT_ADMIN_ROLE, owner_);
-        _grantRole(MINTER_ROLE, owner_);
+        _grantRole(MINTER_ROLE,        owner_);
 
-        /* one-shot minting to vesting wallets */
+        /* ── fee defaults ── */
+        ammRegistry            = IAMMRegistry(ammRegistry_);
+        treasury               = treasury_;
+        isFeeExempt[owner_]    = true;
+        isFeeExempt[treasury_] = true;
+
+        /* ── mint to vesting wallets ── */
         for (uint256 i; i < receivers.length; ++i) {
             if (amounts[i] == 0) revert ZeroAmount();
             _mint(receivers[i], amounts[i]);
@@ -107,6 +135,22 @@ contract DAT is
         /// @dev _mint will revert with ERC20InvalidReceiver if the receiver is a zero address
         if (amount == 0) revert ZeroAmount();
         _mint(to, amount);
+    }
+
+    /* ─── factory-only setters ─── */
+    function setAmmRegistry(address reg) external onlyRole(FACTORY_ROLE) {
+        require(reg != address(0), "zero registry");
+        ammRegistry = IAMMRegistry(reg);
+        emit AmmRegistryUpdated(reg);
+    }
+    function setTreasury(address t) external onlyRole(FACTORY_ROLE) {
+        require(t != address(0), "zero treasury");
+        treasury = t;
+        emit TreasuryUpdated(t);
+    }
+    function setFeeExempt(address a, bool e) external onlyRole(FACTORY_ROLE) {
+        isFeeExempt[a] = e;
+        emit FeeExemptionUpdated(a, e);
     }
 
     /* ─── block-list ops ─── */
@@ -136,11 +180,28 @@ contract DAT is
         return _blockList.contains(addr);
     }
 
+    /* ─── core transfer hook with 1 % fee ─── */
     function _update(
         address from,
         address to,
         uint256 v
-    ) internal virtual override(ERC20Upgradeable, ERC20CappedUpgradeable) whenNotBlocked(from, to) {
+    )
+        internal
+        virtual
+        override(ERC20Upgradeable, ERC20CappedUpgradeable)
+        whenNotBlocked(from, to)
+    {
+        bool takeFee =
+            address(ammRegistry) != address(0) &&
+            !isFeeExempt[from] &&
+            !isFeeExempt[to] &&
+            (ammRegistry.isPair(from) || ammRegistry.isPair(to));
+
+        if (takeFee && v > 0) {
+            uint256 fee = (v * FEE_BPS) / 10_000;
+            super._update(from, treasury, fee);
+            v -= fee;
+        }
         super._update(from, to, v);
     }
 

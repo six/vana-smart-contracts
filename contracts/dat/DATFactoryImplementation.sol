@@ -11,6 +11,7 @@ import "@openzeppelin/contracts/proxy/Clones.sol";
 
 import {DATFactoryStorageV1} from "./interfaces/DATFactoryStorageV1.sol";
 import {IDAT} from "./interfaces/IDAT.sol";
+import { IAMMRegistry } from "./interfaces/IAMMRegistry.sol";
 
 contract DATFactoryImplementation is
     UUPSUpgradeable,
@@ -66,13 +67,15 @@ contract DATFactoryImplementation is
         uint256 maxCap,
         address datImplementation,
         address datVotesImplementation,
-        address datPausableImplementation
+        address datPausableImplementation,
+        address ammRegistry_,           
+        address treasury_        
     ) external initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
 
-        /// @dev Use clones to avoid importing the whole DAT contracts
+/// @dev Use clones to avoid importing the whole DAT contracts
         datTemplates[DATType.DEFAULT] = datImplementation;
         datTemplates[DATType.VOTES] = datVotesImplementation;
         datTemplates[DATType.PAUSABLE] = datPausableImplementation;
@@ -83,6 +86,10 @@ contract DATFactoryImplementation is
 
         minCapDefault = minCap;
         maxCapDefault = maxCap;
+        if (ammRegistry_     == address(0)) revert ZeroAddress();
+        if (treasury_ == address(0)) revert ZeroAddress();
+        ammRegistry     = ammRegistry_;
+        treasury = treasury_;
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
@@ -102,7 +109,7 @@ contract DATFactoryImplementation is
         return _datList.at(index);
     }
 
-    /**
+        /**
      * Deploy a VRC-20 + its vesting wallets.
      *
      * Pass `salt = 0x0` for a non-deterministic address.
@@ -152,9 +159,17 @@ contract DATFactoryImplementation is
             : Clones.cloneDeterministic(datTemplates[params.datType], params.salt);
 
         _datList.add(tokenAddr);
-
         /* 3 – initialise token (mints to the wallets) */
-        IDAT(tokenAddr).initialize(params.name, params.symbol, params.owner, cap_, receivers, amounts);
+        IDAT(tokenAddr).initialize(
+            params.name,
+            params.symbol,
+            params.owner,
+            treasury,
+            ammRegistry,
+            cap_,
+            receivers,
+            amounts
+        );
 
         emit DATCreated(tokenAddr, params.salt, params.name, params.symbol, params.owner, cap_);
     }
@@ -163,6 +178,27 @@ contract DATFactoryImplementation is
     function predictAddress(DATType datType, bytes32 salt) external view override returns (address) {
         if (salt == bytes32(0)) revert ZeroSalt();
         return Clones.predictDeterministicAddress(datTemplates[datType], salt);
+    }
+
+    /* ───────── batch updaters (new) ───────── */
+    function updateTreasuryForTokens(address[] calldata tokens, address newTreasury)
+        external override onlyRole(MAINTAINER_ROLE)
+    {
+        require(newTreasury != address(0), "zero treas");
+        for (uint256 i; i < tokens.length; ++i) {
+            IDAT(tokens[i]).setTreasury(newTreasury);      // FACTORY_ROLE-gated
+        }
+        treasury = newTreasury;
+    }
+
+    function updateRegistryForTokens(address[] calldata tokens, address newRegistry)
+        external override onlyRole(MAINTAINER_ROLE)
+    {
+        require(newRegistry != address(0), "zero reg");
+        for (uint256 i; i < tokens.length; ++i) {
+            IDAT(tokens[i]).setAmmRegistry(newRegistry);   // FACTORY_ROLE-gated
+        }
+        ammRegistry = newRegistry;
     }
 
     /* ---- helper ---- */
