@@ -30,12 +30,11 @@ contract DATVotes is ERC20PermitUpgradeable, ERC20VotesUpgradeable, DAT {
         string memory symbol_,
         address owner_,
         address treasury_,
-        address dataDex_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
     ) external virtual override initializer {
-        __DATVotes_init(name_, symbol_, owner_, treasury_, dataDex_, cap_, receivers, amounts);
+        __DATVotes_init(name_, symbol_, owner_, treasury_, cap_, receivers, amounts);
     }
 
     function __DATVotes_init(
@@ -43,14 +42,13 @@ contract DATVotes is ERC20PermitUpgradeable, ERC20VotesUpgradeable, DAT {
         string memory symbol_,
         address owner_,
         address treasury_,
-        address dataDex_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
     ) internal onlyInitializing {
         __ERC20Permit_init(name_);
         __ERC20Votes_init();
-        __DAT_init(name_, symbol_, owner_, treasury_, dataDex_, cap_, receivers, amounts);
+        __DAT_init(name_, symbol_, owner_, treasury_, cap_, receivers, amounts);
     }
 
     function templateName() external pure virtual override returns (string memory) {

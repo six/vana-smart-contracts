@@ -67,7 +67,6 @@ contract DATFactoryImplementation is
         address datImplementation,
         address datVotesImplementation,
         address datPausableImplementation,
-        address dataDex_,
         address multisigTreasury_
     ) external initializer {
         __AccessControl_init();
@@ -85,9 +84,7 @@ contract DATFactoryImplementation is
 
         minCapDefault = minCap;
         maxCapDefault = maxCap;
-        if (dataDex_ == address(0)) revert ZeroAddress();
         if (multisigTreasury_ == address(0)) revert ZeroAddress();
-        dataDex = dataDex_;
         treasury = multisigTreasury_;
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
@@ -164,7 +161,6 @@ contract DATFactoryImplementation is
             params.symbol,
             params.owner,
             treasury,
-            dataDex,
             cap_,
             receivers,
             amounts
@@ -192,16 +188,13 @@ contract DATFactoryImplementation is
         treasury = newTreasury;
     }
 
-    function updateDataDexForTokens(address[] calldata tokens, address newDataDex)
+    function updateAmmPairForToken(address token, address newAmmPair)
         external
         override
         onlyRole(MAINTAINER_ROLE)
     {
-        require(newDataDex != address(0), "zero dex");
-        for (uint256 i; i < tokens.length; ++i) {
-            IDAT(tokens[i]).setDataDex(newDataDex); // FACTORY_ROLE-gated
-        }
-        dataDex = newDataDex;
+        require(newAmmPair != address(0), "zero pair");
+        IDAT(token).setAmmPair(newAmmPair); // FACTORY_ROLE-gated
     }
 
     /* ---- helper ---- */

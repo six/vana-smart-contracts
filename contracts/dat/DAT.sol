@@ -36,7 +36,7 @@ contract DAT is
     bytes32 public constant FACTORY_ROLE = keccak256("FACTORY_ROLE"); // factory-only powers
 
     /* ───── state ───── */
-    address public dataDex;
+    address public ammPair;
     address public treasury;
 
     /* ───── internal state ───── */
@@ -46,7 +46,7 @@ contract DAT is
     /* ───── events ───── */
     event AddressBlocked(address indexed);
     event AddressUnblocked(address indexed);
-    event DataDexUpdated(address indexed); // factory-only
+    event AmmPairUpdated(address indexed); // factory-only
     event TreasuryUpdated(address indexed); // factory-only
     event FeeExemptionUpdated(address indexed, bool); // factory-only
 
@@ -69,12 +69,11 @@ contract DAT is
         string memory symbol_,
         address owner_,
         address treasury_,
-        address dataDex_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
     ) external virtual initializer {
-        __DAT_init(name_, symbol_, owner_, treasury_, dataDex_, cap_, receivers, amounts);
+        __DAT_init(name_, symbol_, owner_, treasury_, cap_, receivers, amounts);
     }
 
     function __DAT_init(
@@ -82,7 +81,6 @@ contract DAT is
         string memory symbol_,
         address owner_,
         address treasury_,
-        address dataDex_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
@@ -92,7 +90,6 @@ contract DAT is
         if (bytes(symbol_).length == 0) revert EmptyString("symbol");
         if (owner_ == address(0)) revert ZeroAddress();
         if (treasury_ == address(0))   revert ZeroAddress();
-        if (dataDex_ == address(0)) revert ZeroAddress();
         if (receivers.length != amounts.length) revert ArrayLengthMismatch(receivers.length, amounts.length);
 
         /* ── base inits ── */
@@ -108,7 +105,6 @@ contract DAT is
         _grantRole(MINTER_ROLE, owner_);
 
         /* ── fee defaults ── */
-        dataDex = dataDex_;
         treasury = treasury_;
         isFeeExempt[owner_] = true;
         isFeeExempt[treasury_] = true;
@@ -138,10 +134,10 @@ contract DAT is
     }
 
     /* ─── factory-only setters ─── */
-    function setDataDex(address dex) external onlyRole(FACTORY_ROLE) {
-        require(dex != address(0), "zero dex");
-        dataDex = dex;
-        emit DataDexUpdated(dex);
+    function setAmmPair(address pair) external onlyRole(FACTORY_ROLE) {
+        require(pair != address(0), "zero pair");
+        ammPair = pair;
+        emit AmmPairUpdated(pair);
     }
     function setTreasury(address t) external onlyRole(FACTORY_ROLE) {
         require(t != address(0), "zero treasury");
@@ -192,7 +188,7 @@ contract DAT is
         whenNotBlocked(from, to)
     {
         bool takeFee =
-            dataDex != address(0) && !isFeeExempt[from] && !isFeeExempt[to] && (from == dataDex || to == dataDex);
+            ammPair != address(0) && !isFeeExempt[from] && !isFeeExempt[to] && (from == ammPair || to == ammPair);
 
         if (takeFee && v > 0) {
             uint256 fee = (v * FEE_BPS) / 10_000;

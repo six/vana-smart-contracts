@@ -24,7 +24,7 @@ describe("DATFactory + VestingWallet", () => {
     let user2: HardhatEthersSigner;
     let user3: HardhatEthersSigner;
     let treasury: HardhatEthersSigner;
-    let dataDex: HardhatEthersSigner;
+    let ammPair: HardhatEthersSigner;
 
     let datFactory: DATFactoryImplementation;
     let datToken: DAT;
@@ -69,7 +69,7 @@ describe("DATFactory + VestingWallet", () => {
             user2,
             user3,
             treasury,
-            dataDex,
+            ammPair,
         ] = await ethers.getSigners();
 
         // Deploy DATFactory
@@ -87,7 +87,7 @@ describe("DATFactory + VestingWallet", () => {
 
         const factoryDeploy = await upgrades.deployProxy(
             await ethers.getContractFactory("DATFactoryImplementation"),
-            [owner.address, minCap, maxCap, datImplementation.target, datVotesImplementation.target, datPausableImplementation.target, dataDex.address, treasury.address],
+            [owner.address, minCap, maxCap, datImplementation.target, datVotesImplementation.target, datPausableImplementation.target, treasury.address],
             {
                 kind: "uups",
             },
@@ -882,7 +882,7 @@ describe("DATFactory + VestingWallet", () => {
             .should.be.rejectedWith("ZeroSalt");
     });
 
-    it("should update treasury and dataDex for multiple tokens", async function () {
+    it("should update treasury and ammPair for multiple tokens", async function () {
         // Deploy two tokens
         const salt1 = ethers.id("BATCH1");
         const salt2 = ethers.id("BATCH2");
@@ -920,7 +920,7 @@ describe("DATFactory + VestingWallet", () => {
 
         // Deploy new treasury and registry
         const newTreasury = user1.address;
-        const newDataDex = user2.address;
+        const newAmmPair = user2.address;
 
         // Only maintainer can call batch updaters
         await expect(
@@ -935,14 +935,18 @@ describe("DATFactory + VestingWallet", () => {
         (await dat2.treasury()).should.eq(newTreasury);
 
         await expect(
-            datFactory.connect(user2).updateDataDexForTokens([tokenAddress1, tokenAddress2], newDataDex)
+            datFactory.connect(user2).updateAmmPairForToken(tokenAddress1, newAmmPair)
         ).to.be.revertedWithCustomError(datFactory, "AccessControlUnauthorizedAccount");
 
         await expect(
-            datFactory.connect(maintainer).updateDataDexForTokens([tokenAddress1, tokenAddress2], newDataDex)
+            datFactory.connect(maintainer).updateAmmPairForToken(tokenAddress1, newAmmPair)
         ).to.not.be.reverted;
 
-        (await dat1.dataDex()).should.eq(newDataDex);
-        (await dat2.dataDex()).should.eq(newDataDex);
+        await expect(
+            datFactory.connect(maintainer).updateAmmPairForToken(tokenAddress2, newAmmPair)
+        ).to.not.be.reverted;
+
+        (await dat1.ammPair()).should.eq(newAmmPair);
+        (await dat2.ammPair()).should.eq(newAmmPair);
     });
 });

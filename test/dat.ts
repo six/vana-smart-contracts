@@ -24,7 +24,7 @@ describe("DAT", function () {
     let user2: HardhatEthersSigner;
     let user3: HardhatEthersSigner;
     let treasury: HardhatEthersSigner;
-    let dataDex: HardhatEthersSigner;
+    let ammPair: HardhatEthersSigner;
 
     let datToken: DAT;
     let cloneHelper: CloneHelper;
@@ -66,7 +66,7 @@ describe("DAT", function () {
             user2,
             user3,
             treasury,
-            dataDex,
+            ammPair,
         ] = await ethers.getSigners();
 
         // Deploy DAT
@@ -85,7 +85,7 @@ describe("DAT", function () {
         datToken = (await ethers.getContractAt("DAT", datTokenAddress)) as DAT;
 
         await datToken.initialize(
-            tokenName, tokenSymbol, owner.address, treasury.address, dataDex.address, tokenCap,
+            tokenName, tokenSymbol, owner.address, treasury.address, tokenCap,
             [beneficiary1.address, beneficiary2.address], [amount1, amount2],
         );
 
@@ -128,7 +128,7 @@ describe("DAT", function () {
                     const datToken = (await ethers.getContractAt("DAT", datTokenAddress)) as DAT;
 
                     await datToken.initialize(
-                        tokenName, tokenSymbol, owner.address, treasury.address, dataDex.address, 0,
+                        tokenName, tokenSymbol, owner.address, treasury.address, 0,
                         [beneficiary1.address, beneficiary2.address], [amount1, amount2],
                     );
 
@@ -159,56 +159,56 @@ describe("DAT", function () {
 
                     await datToken
                         .initialize(
-                            "", tokenSymbol, owner.address, treasury.address, dataDex.address, 0,
+                            "", tokenSymbol, owner.address, treasury.address, 0,
                             [beneficiary1.address, beneficiary2.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`EmptyString("name")`);
 
                     await datToken
                         .initialize(
-                            tokenName, "", owner.address, treasury.address, dataDex.address, 0,
+                            tokenName, "", owner.address, treasury.address, 0,
                             [beneficiary1.address, beneficiary2.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`EmptyString("symbol")`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, ethers.ZeroAddress, treasury.address, dataDex.address, 0,
+                            tokenName, tokenSymbol, ethers.ZeroAddress, treasury.address, 0,
                             [ethers.ZeroAddress, beneficiary2.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`ZeroAddress()`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, treasury.address, dataDex.address, 0,
+                            tokenName, tokenSymbol, owner.address, treasury.address, 0,
                             [beneficiary1.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`ArrayLengthMismatch(1, 2)`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, treasury.address, dataDex.address, 0,
+                            tokenName, tokenSymbol, owner.address, treasury.address, 0,
                             [beneficiary1.address, beneficiary2.address], [0, amount2],
                         )
                         .should.be.rejectedWith(`ZeroAmount()`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, treasury.address, dataDex.address, 0,
+                            tokenName, tokenSymbol, owner.address, treasury.address, 0,
                             [beneficiary1.address, beneficiary2.address], [amount1, 0],
                         )
                         .should.be.rejectedWith(`ZeroAmount()`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, treasury.address, dataDex.address, 0,
+                            tokenName, tokenSymbol, owner.address, treasury.address, 0,
                             [ethers.ZeroAddress, beneficiary2.address], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`ERC20InvalidReceiver("${ethers.ZeroAddress}")`);
 
                     await datToken
                         .initialize(
-                            tokenName, tokenSymbol, owner.address, treasury.address, dataDex.address, 0,
+                            tokenName, tokenSymbol, owner.address, treasury.address, 0,
                             [beneficiary1.address, ethers.ZeroAddress], [amount1, amount2],
                         )
                         .should.be.rejectedWith(`ERC20InvalidReceiver("${ethers.ZeroAddress}")`);
@@ -309,72 +309,72 @@ describe("DAT", function () {
                         approveAmount - transferAmount,
                     );
                 });
+
+                it("should take a 1% fee on transfers to/from AMM", async function () {
+                    // No fee without amm pair
+                    const transferAmount = parseEther(10_000);
+                    await datToken.connect(beneficiary1).transfer(user1.address, transferAmount);
+                    (await datToken.balanceOf(beneficiary1.address)).should.eq(amount1 - transferAmount);
+                    (await datToken.balanceOf(user1.address)).should.eq(transferAmount);
+
+                    // Set amm pair to enable fee
+                    await datToken.connect(cloneHelper.runner).setAmmPair(ammPair.address);
+
+                    // Beneficiary1 is not fee-exempt, so a fee should be taken
+                    await datToken.connect(beneficiary1).transfer(ammPair.address, transferAmount);
+                    const fee = transferAmount / 100n;
+                    (await datToken.balanceOf(treasury.address)).should.eq(fee);
+                    (await datToken.balanceOf(ammPair.address)).should.eq(transferAmount - fee);
+
+                    // Treasury is fee-exempt, so no fee should be taken
+                    const treasuryBalanceBefore = await datToken.balanceOf(treasury.address);
+                    const user1BalanceBefore = await datToken.balanceOf(user1.address);
+                    await datToken.connect(treasury).transfer(user1.address, fee);
+                    (await datToken.balanceOf(user1.address)).should.eq(user1BalanceBefore + fee);
+                    (await datToken.balanceOf(treasury.address)).should.eq(treasuryBalanceBefore - fee);
+                });
             });
 
-            describe("Fee Mechanism", () => {
-                it("should take a 1% fee on transfer to/from a registered AMM", async function () {
-                    // Mint to user2
-                    const mintAmount = parseEther(100);
-                    await datToken.connect(owner).mint(user2.address, mintAmount);
-                    await datToken.connect(owner).mint(dataDex.address, mintAmount);
-
-                    const transferAmount = parseEther(50);
-                    const fee = transferAmount / 100n; // 1% fee
-
-                    // Transfer to AMM
-                    const treasuryBalanceBefore = await datToken.balanceOf(treasury.address);
-                    const dataDexBalanceBefore = await datToken.balanceOf(dataDex.address);
-
-                    await datToken.connect(user2).transfer(dataDex.address, transferAmount);
-
-                    (await datToken.balanceOf(treasury.address)).should.eq(
-                        treasuryBalanceBefore + fee,
-                    );
-                    (await datToken.balanceOf(dataDex.address)).should.eq(
-                        dataDexBalanceBefore + (transferAmount - fee),
-                    );
-
-                    // Transfer from AMM
-                    const user3BalanceBefore = await datToken.balanceOf(user3.address);
-                    await datToken.connect(dataDex).transfer(user3.address, transferAmount);
-
-                    (await datToken.balanceOf(user3.address)).should.eq(
-                        user3BalanceBefore + (transferAmount - fee),
-                    );
+            describe("Factory-only setters", () => {
+                it("should allow factory to update treasury", async () => {
+                    const newTreasury = user1.address;
+                    (await datToken.treasury()).should.not.eq(newTreasury);
+                    await datToken.connect(cloneHelper.runner).setTreasury(newTreasury);
+                    (await datToken.treasury()).should.eq(newTreasury);
                 });
 
-                it("should NOT take a 1% fee on transfer if one party is exempt", async function () {
-                    // Mint to user2
-                    const mintAmount = parseEther(100);
-                    await datToken.connect(owner).mint(user2.address, mintAmount);
-
-                    // Exempt user2
-                    await datToken.connect(owner).setFeeExempt(user2.address, true);
-
-                    const transferAmount = parseEther(50);
-
-                    // Transfer to AMM
-                    const dataDexBalanceBefore = await datToken.balanceOf(dataDex.address);
-                    await datToken.connect(user2).transfer(dataDex.address, transferAmount);
-
-                    (await datToken.balanceOf(dataDex.address)).should.eq(
-                        dataDexBalanceBefore + transferAmount,
-                    );
+                it("should allow factory to update ammPair", async () => {
+                    const newAmmPair = user1.address;
+                    (await datToken.ammPair()).should.not.eq(newAmmPair);
+                    await datToken.connect(cloneHelper.runner).setAmmPair(newAmmPair);
+                    (await datToken.ammPair()).should.eq(newAmmPair);
                 });
 
-                it("should allow factory to update DataDex", async function () {
-                    const newDataDex = user3;
+                it("should allow factory to update fee exemptions", async () => {
+                    (await datToken.isFeeExempt(user1.address)).should.be.false;
+                    await datToken.connect(cloneHelper.runner).setFeeExempt(user1.address, true);
+                    (await datToken.isFeeExempt(user1.address)).should.be.true;
+                });
 
-                    // Only factory can call this
-                    await datToken.connect(user1).setDataDex(newDataDex.address)
-                        .should.be.rejectedWith(
-                            `AccessControlUnauthorizedAccount("${user1.address}", "${FACTORY_ROLE}")`,
-                        );
+                it("should emit events on updates", async () => {
+                    await expect(datToken.connect(cloneHelper.runner).setTreasury(user1.address))
+                        .to.emit(datToken, "TreasuryUpdated")
+                        .withArgs(user1.address);
+                    await expect(datToken.connect(cloneHelper.runner).setAmmPair(user1.address))
+                        .to.emit(datToken, "AmmPairUpdated")
+                        .withArgs(user1.address);
+                    await expect(datToken.connect(cloneHelper.runner).setFeeExempt(user1.address, true))
+                        .to.emit(datToken, "FeeExemptionUpdated")
+                        .withArgs(user1.address, true);
+                });
 
-                    await datToken.connect(owner).grantRole(FACTORY_ROLE, owner.address);
-
-                    await datToken.connect(owner).setDataDex(newDataDex.address);
-                    (await datToken.dataDex()).should.eq(newDataDex.address);
+                it("should prevent non-factory from calling setters", async () => {
+                    await expect(datToken.connect(user1).setTreasury(user2.address))
+                        .to.be.revertedWithCustomError(datToken, "AccessControlUnauthorizedAccount");
+                    await expect(datToken.connect(user1).setAmmPair(user2.address))
+                        .to.be.revertedWithCustomError(datToken, "AccessControlUnauthorizedAccount");
+                    await expect(datToken.connect(user1).setFeeExempt(user2.address, true))
+                        .to.be.revertedWithCustomError(datToken, "AccessControlUnauthorizedAccount");
                 });
             });
 
@@ -620,6 +620,13 @@ describe("DAT", function () {
                     await datToken
                         .blockListAt(1)
                         .should.be.rejectedWith("IndexOutOfBounds");
+                });
+
+                it("should transfer tokens as normal between non-blocked addresses", async function () {
+                    const balanceBefore = await datToken.balanceOf(user2.address);
+                    const transferAmount = parseEther(10_000);
+                    await datToken.connect(beneficiary1).transfer(user2.address, transferAmount);
+                    (await datToken.balanceOf(user2.address)).should.eq(balanceBefore + transferAmount);
                 });
             });
 
