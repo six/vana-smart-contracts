@@ -9,8 +9,6 @@ import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20Burnable
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-import { IAMMRegistry } from "./interfaces/IAMMRegistry.sol";
-
 /* ─── custom errors ─── */
 error AccountBlocked();
 error ZeroAddress();
@@ -34,21 +32,23 @@ contract DAT is
     uint16 public constant FEE_BPS = 100;                      // 1 %
 
     /* ───── roles ───── */
-    bytes32 public constant MINTER_ROLE   = keccak256("MINTER_ROLE");
-    bytes32 public constant FACTORY_ROLE  = keccak256("FACTORY_ROLE"); // factory-only powers
+    bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
+    bytes32 public constant FACTORY_ROLE = keccak256("FACTORY_ROLE"); // factory-only powers
+
+    /* ───── state ───── */
+    address public dataDex;
+    address public treasury;
 
     /* ───── internal state ───── */
     EnumerableSet.AddressSet internal _blockList;
-    IAMMRegistry public ammRegistry;                            // AMM allow-list
-    address      public treasury;                               // fee sink
     mapping(address => bool) public isFeeExempt;                // wallet ↦ exempt?
 
     /* ───── events ───── */
     event AddressBlocked(address indexed);
     event AddressUnblocked(address indexed);
-    event AmmRegistryUpdated(address indexed);                  // factory-only
-    event TreasuryUpdated(address indexed);                     // factory-only
-    event FeeExemptionUpdated(address indexed, bool);           // factory-only
+    event DataDexUpdated(address indexed); // factory-only
+    event TreasuryUpdated(address indexed); // factory-only
+    event FeeExemptionUpdated(address indexed, bool); // factory-only
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -69,12 +69,12 @@ contract DAT is
         string memory symbol_,
         address owner_,
         address treasury_,
-        address ammRegistry_,
+        address dataDex_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
     ) external virtual initializer {
-        __DAT_init(name_, symbol_, owner_, treasury_, ammRegistry_, cap_, receivers, amounts);
+        __DAT_init(name_, symbol_, owner_, treasury_, dataDex_, cap_, receivers, amounts);
     }
 
     function __DAT_init(
@@ -82,7 +82,7 @@ contract DAT is
         string memory symbol_,
         address owner_,
         address treasury_,
-        address ammRegistry_,
+        address dataDex_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
@@ -92,7 +92,7 @@ contract DAT is
         if (bytes(symbol_).length == 0) revert EmptyString("symbol");
         if (owner_ == address(0)) revert ZeroAddress();
         if (treasury_ == address(0))   revert ZeroAddress();
-        if (ammRegistry_ == address(0)) revert ZeroAddress();
+        if (dataDex_ == address(0)) revert ZeroAddress();
         if (receivers.length != amounts.length) revert ArrayLengthMismatch(receivers.length, amounts.length);
 
         /* ── base inits ── */
@@ -102,15 +102,15 @@ contract DAT is
         __AccessControl_init();
 
         /* ── roles ── */
-        address factory = _msgSender();               // clone factory
-        _grantRole(FACTORY_ROLE,       factory);
+        address factory = _msgSender(); // clone factory
+        _grantRole(FACTORY_ROLE, factory);
         _grantRole(DEFAULT_ADMIN_ROLE, owner_);
-        _grantRole(MINTER_ROLE,        owner_);
+        _grantRole(MINTER_ROLE, owner_);
 
         /* ── fee defaults ── */
-        ammRegistry            = IAMMRegistry(ammRegistry_);
-        treasury               = treasury_;
-        isFeeExempt[owner_]    = true;
+        dataDex = dataDex_;
+        treasury = treasury_;
+        isFeeExempt[owner_] = true;
         isFeeExempt[treasury_] = true;
 
         /* ── mint to vesting wallets ── */
@@ -138,10 +138,10 @@ contract DAT is
     }
 
     /* ─── factory-only setters ─── */
-    function setAmmRegistry(address reg) external onlyRole(FACTORY_ROLE) {
-        require(reg != address(0), "zero registry");
-        ammRegistry = IAMMRegistry(reg);
-        emit AmmRegistryUpdated(reg);
+    function setDataDex(address dex) external onlyRole(FACTORY_ROLE) {
+        require(dex != address(0), "zero dex");
+        dataDex = dex;
+        emit DataDexUpdated(dex);
     }
     function setTreasury(address t) external onlyRole(FACTORY_ROLE) {
         require(t != address(0), "zero treasury");
@@ -192,10 +192,7 @@ contract DAT is
         whenNotBlocked(from, to)
     {
         bool takeFee =
-            address(ammRegistry) != address(0) &&
-            !isFeeExempt[from] &&
-            !isFeeExempt[to] &&
-            (ammRegistry.isPair(from) || ammRegistry.isPair(to));
+            dataDex != address(0) && !isFeeExempt[from] && !isFeeExempt[to] && (from == dataDex || to == dataDex);
 
         if (takeFee && v > 0) {
             uint256 fee = (v * FEE_BPS) / 10_000;

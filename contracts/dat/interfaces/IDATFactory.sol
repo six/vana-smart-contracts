@@ -26,7 +26,7 @@ interface IDATFactory {
 
     function updateTreasuryForTokens(address[] calldata tokens, address newTreasury) external;
 
-    function updateRegistryForTokens(address[] calldata tokens, address newRegistry) external;
+    function updateDataDexForTokens(address[] calldata tokens, address newDataDex) external;
 
     struct VestingParams {
         address beneficiary; // receiver

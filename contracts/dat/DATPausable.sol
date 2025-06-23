@@ -15,27 +15,27 @@ contract DATPausable is PausableUpgradeable, DATVotes {
         string memory name_,
         string memory symbol_,
         address owner_,
-        address treasury_,        
-        address ammRegistry_,
+        address treasury_,
+        address dataDex_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
     ) external virtual override initializer {
-        __DATPausable_init(name_, symbol_, owner_, treasury_, ammRegistry_,  cap_, receivers, amounts);
+        __DATPausable_init(name_, symbol_, owner_, treasury_, dataDex_,  cap_, receivers, amounts);
     }
 
     function __DATPausable_init(
         string memory name_,
         string memory symbol_,
         address owner_,
-        address treasury_,        
-        address ammRegistry_,
+        address treasury_,
+        address dataDex_,
         uint256 cap_,
         address[] memory receivers,
         uint256[] memory amounts
     ) internal onlyInitializing {
         __Pausable_init();
-        __DATVotes_init(name_, symbol_, owner_, treasury_, ammRegistry_,  cap_, receivers, amounts);
+        __DATVotes_init(name_, symbol_, owner_, treasury_, dataDex_,  cap_, receivers, amounts);
     }
 
     function templateName() external pure virtual override returns (string memory) {
